@@ -12,11 +12,12 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(20), default='parent') # 'parent' ή 'kid'
-    
-    # Σύνδεση παιδιού με γονέα (Self-referencing)
     parent_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    
+    # Αποθήκευση πόντων από το AI
+    points = db.Column(db.Integer, default=0)
 
-    # Σχέσεις (Relationships)
+    # Σχέσεις
     children = db.relationship('User', backref=db.backref('parent_obj', remote_side=[id]), lazy=True)
     transactions = db.relationship('Transaction', backref='owner', lazy=True, cascade="all, delete-orphan")
 
@@ -27,7 +28,6 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def get_balance(self):
-        # Υπολογίζει το άθροισμα όλων των κινήσεων
         return round(sum(t.amount for t in self.transactions), 2)
 
     def to_dict(self):
@@ -37,7 +37,8 @@ class User(db.Model):
             "email": self.email,
             "role": self.role,
             "balance": self.get_balance(),
-            "parent_id": self.parent_id if self.role == 'kid' else None
+            "points": self.points,
+            "parent_id": self.parent_id
         }
 
 class Transaction(db.Model):
@@ -45,8 +46,8 @@ class Transaction(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     amount = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(50), nullable=True)    # Είδος (π.χ. Food, Games, Clothes)
-    store_name = db.Column(db.String(100), nullable=True) # Κατάστημα (π.χ. Zara, Steam)
+    category = db.Column(db.String(50), default="General")
+    store_name = db.Column(db.String(100), default="N/A")
     description = db.Column(db.String(200), default="No description")
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
@@ -55,8 +56,8 @@ class Transaction(db.Model):
         return {
             "id": self.id,
             "amount": self.amount,
-            "category": self.category if self.category else "General",
-            "store": self.store_name if self.store_name else "N/A",
+            "category": self.category,
+            "store": self.store_name,
             "description": self.description,
             "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
