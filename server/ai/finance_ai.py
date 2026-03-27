@@ -129,4 +129,4 @@ if __name__ == "__main__":
     # Πρόβλεψη για PC 1000€ με χαρτζιλίκι 50€/βδομάδα
     prediction = brain.predict_goal_timeframe(1000, 50)
     print(f"\nΣυμβουλή AI: {prediction['advice']}")
-    print(f"Εκτιμώμενες εβδομάδες: {prediction['weeks_left']}")
+    print(f"Εκτιμώμενες εβδομάδες: {prediction['weeks_left']}")     
