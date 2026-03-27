@@ -1,53 +1,47 @@
-import React, { useState, useEffect } from "react";
+import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
+  Switch,
+  Text,
   TextInput,
   TouchableOpacity,
   View,
-  Text,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
-import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import Constants from "expo-constants";
 
-// --- DYNAMIC IP LOGIC ---
-const getApiUrl = () => {
-  const hostUri = Constants.expoConfig?.hostUri; // Παίρνει την IP του PC που τρέχει το Metro
-  if (!hostUri) {
-    // Fallback για Emulators
-    return Platform.OS === "android" ? "http://10.0.2.2:5000" : "http://localhost:5000";
-  }
-  const ip = hostUri.split(":")[0];
-  return `http://${ip}:5000`;
-};
-
-const API_URL = getApiUrl();
+// --- ΡΥΘΜΙΣΗ IP (Βεβαιώσου ότι είναι η σωστή IP του WSL σου) ---
+const API_URL = "http://192.168.199.153:5000"; 
 
 type AuthMode = "LOGIN" | "REGISTER_PARENT" | "REGISTER_KID";
 
 export default function AuthScreen() {
   const [mode, setMode] = useState<AuthMode>("LOGIN");
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [allowance, setAllowance] = useState("10");
   const [loading, setLoading] = useState(false);
-
   const router = useRouter();
 
-  // Debugging: Δες στην κονσόλα πού προσπαθεί να συνδεθεί
-  useEffect(() => {
-    console.log("KippyBank Backend Target:", API_URL);
-  }, []);
+  // --- ΣΤΟΙΧΕΙΑ ΧΡΗΣΤΗ (Γονέα ή Παιδιού) ---
+  const [username, setUsername] = useState(""); // Εδώ μπαίνει το όνομα παιδιού ή γονέα
+  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(""); // Απαραίτητο για τη βάση
+
+  // --- ΣΤΟΙΧΕΙΑ ΠΑΙΔΙΟΥ ---
+  const [allowance, setAllowance] = useState("10");
+  const [isKidLogin, setIsKidLogin] = useState(false);
+
+  // --- ΣΤΟΙΧΕΙΑ ΓΟΝΕΑ (Για επιβεβαίωση) ---
+  const [parentUsername, setParentUsername] = useState("");
+  const [parentPassword, setParentPassword] = useState("");
 
   const handleAuth = async () => {
+    // Βασικός έλεγχος κενών πεδίων
     if (!username || !password) {
-      Alert.alert("Προσοχή", "Συμπληρώστε username και κωδικό.");
+      Alert.alert("Σφάλμα", "Συμπληρώστε όνομα και κωδικό.");
       return;
     }
 
@@ -55,17 +49,29 @@ export default function AuthScreen() {
     try {
       const endpoint = mode === "LOGIN" ? "/api/login" : "/api/register";
       
-      // Κατασκευή του payload ακριβώς όπως το θέλει το Flask σου
-      const payload: any = { 
-        username: username.trim(), 
-        password: password 
+      // Κατασκευή του αντικειμένου που θα σταλεί (Payload)
+      let payload: any = {
+        username: username.trim(),
+        password: password,
       };
 
-      if (mode !== "LOGIN") {
-        payload.email = email.trim() || `${username}@kippy.com`;
+      if (mode === "LOGIN") {
+        // Αν είναι Login παιδιού, στέλνουμε και τα στοιχεία γονέα για έγκριση
+        if (isKidLogin) {
+          payload.parent_username = parentUsername.trim();
+          payload.parent_password = parentPassword;
+        }
+      } else {
+        // --- REGISTER LOGIC ---
         payload.role = mode === "REGISTER_KID" ? "kid" : "parent";
+        
+        // SOS: Το email είναι nullable=False στη βάση, οπότε πρέπει να στείλουμε κάτι οπωσδήποτε
+        payload.email = email.trim() || `${username}@kippybank.com`;
+
         if (mode === "REGISTER_KID") {
           payload.weekly_allowance = parseFloat(allowance) || 0;
+          payload.parent_username = parentUsername.trim(); // Για να βρει ο σερβερ το parent_id
+          payload.parent_password = parentPassword;
         }
       }
 
@@ -79,41 +85,34 @@ export default function AuthScreen() {
 
       if (response.ok) {
         if (mode === "LOGIN") {
-          // ΑΠΟΘΗΚΕΥΣΗ JWT & USER DATA
           await SecureStore.setItemAsync("userToken", data.token);
           await SecureStore.setItemAsync("userData", JSON.stringify(data.user));
-          
-          console.log("Login Success! Token saved.");
-          router.replace("/(tabs)"); // Πλοήγηση στο main app
+          router.replace("/(tabs)"); 
         } else {
-          Alert.alert("Επιτυχία", "Ο λογαριασμός δημιουργήθηκε! Συνδεθείτε.");
+          Alert.alert("Επιτυχία!", "Ο λογαριασμός δημιουργήθηκε. Κάντε είσοδο.");
           setMode("LOGIN");
         }
       } else {
-        Alert.alert("Αποτυχία", data.error || "Λάθος στοιχεία.");
+        Alert.alert("Αποτυχία", data.error || "Ελέγξτε τα στοιχεία σας.");
       }
     } catch (error) {
-      console.error("Fetch Error:", error);
-      Alert.alert(
-        "Σφάλμα Δικτύου",
-        `Δεν μπόρεσα να βρω το Kippy API στο ${API_URL}.\n\n1. Τρέχει το Flask?\n2. Είσαι στο ίδιο WiFi;`
-      );
+      console.error(error);
+      Alert.alert("Σφάλμα Δικτύου", "Δεν βρέθηκε ο σερβερ. Τρέχει το Flask;");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        
         <View style={styles.header}>
           <Text style={styles.logo}>KippyBank 🏦</Text>
-          <Text style={styles.infoText}>Connecting to: {API_URL}</Text>
+          <Text style={styles.subtitle}>Smart Finance for Families</Text>
         </View>
 
+        {/* Tab Selection */}
         <View style={styles.tabContainer}>
           <TouchableOpacity onPress={() => setMode("LOGIN")} style={[styles.tab, mode === "LOGIN" && styles.activeTab]}>
             <Text style={[styles.tabLabel, mode === "LOGIN" && styles.activeTabLabel]}>Login</Text>
@@ -127,79 +126,71 @@ export default function AuthScreen() {
         </View>
 
         <View style={styles.card}>
-          <TextInput
-            style={styles.input}
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-          />
-
-          {mode !== "LOGIN" && (
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          )}
-
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-
-          {mode === "REGISTER_KID" && (
-            <View style={styles.allowanceContainer}>
-              <Text style={styles.label}>Weekly Allowance (€)</Text>
-              <TextInput
-                style={styles.input}
-                value={allowance}
-                onChangeText={setAllowance}
-                keyboardType="numeric"
-              />
+          {/* Αν είναι Login, ρωτάμε αν είναι παιδί */}
+          {mode === "LOGIN" && (
+            <View style={styles.switchRow}>
+              <Text style={styles.label}>Είσοδος ως Παιδί;</Text>
+              <Switch value={isKidLogin} onValueChange={setIsKidLogin} trackColor={{ true: '#1a73e8' }} />
             </View>
           )}
 
-          <TouchableOpacity
-            style={[styles.button, loading && { opacity: 0.7 }]}
-            onPress={handleAuth}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {mode === "LOGIN" ? "ΕΙΣΟΔΟΣ" : "ΕΓΓΡΑΦΗ"}
-              </Text>
-            )}
+          <Text style={styles.inputLabel}>{mode === "REGISTER_KID" ? "Όνομα Παιδιού" : "Username"}</Text>
+          <TextInput style={styles.input} placeholder="π.χ. stelios_jr" value={username} onChangeText={setUsername} autoCapitalize="none" />
+
+          {mode !== "LOGIN" && (
+            <>
+              <Text style={styles.inputLabel}>Email {mode === "REGISTER_KID" && "(Προαιρετικό)"}</Text>
+              <TextInput style={styles.input} placeholder="email@example.com" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+            </>
+          )}
+
+          <Text style={styles.inputLabel}>Κωδικός {mode === "REGISTER_KID" ? "Παιδιού" : ""}</Text>
+          <TextInput style={styles.input} placeholder="********" value={password} onChangeText={setPassword} secureTextEntry />
+
+          {/* ΠΕΔΙΑ ΓΟΝΕΑ (Εμφανίζονται στην Εγγραφή Παιδιού ή στο Kid Login) */}
+          {(mode === "REGISTER_KID" || (mode === "LOGIN" && isKidLogin)) && (
+            <View style={styles.parentSection}>
+              <Text style={styles.parentSectionTitle}>ΕΓΚΡΙΣΗ ΓΟΝΕΑ 🛡️</Text>
+              <TextInput style={styles.input} placeholder="Username Γονέα" value={parentUsername} onChangeText={setParentUsername} autoCapitalize="none" />
+              <TextInput style={styles.input} placeholder="Password Γονέα" value={parentPassword} onChangeText={setParentPassword} secureTextEntry />
+              
+              {mode === "REGISTER_KID" && (
+                <>
+                  <Text style={styles.inputLabel}>Εβδομαδιαίο Χαρτζιλίκι (€)</Text>
+                  <TextInput style={styles.input} value={allowance} onChangeText={setAllowance} keyboardType="numeric" />
+                </>
+              )}
+            </View>
+          )}
+
+          <TouchableOpacity style={[styles.button, loading && { opacity: 0.7 }]} onPress={handleAuth} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{mode === "LOGIN" ? "ΕΠΙΒΕΒΑΙΩΣΗ" : "ΔΗΜΙΟΥΡΓΙΑ"}</Text>}
           </TouchableOpacity>
         </View>
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f0f2f5" },
-  scrollContent: { padding: 25, flexGrow: 1, justifyContent: "center" },
+  container: { flex: 1, backgroundColor: "#f4f7fa" },
+  scrollContent: { padding: 20, paddingTop: 60 },
   header: { alignItems: "center", marginBottom: 30 },
-  logo: { fontSize: 38, fontWeight: "900", color: "#1a73e8", letterSpacing: -1 },
-  infoText: { fontSize: 10, color: "#999", marginTop: 5 },
-  tabContainer: { flexDirection: "row", backgroundColor: "#ddd", borderRadius: 12, padding: 4, marginBottom: 20 },
+  logo: { fontSize: 32, fontWeight: "900", color: "#1a73e8" },
+  subtitle: { fontSize: 14, color: "#666" },
+  tabContainer: { flexDirection: "row", backgroundColor: "#e0e0e0", borderRadius: 12, padding: 5, marginBottom: 20 },
   tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
   activeTab: { backgroundColor: "#fff" },
-  tabLabel: { fontSize: 13, fontWeight: "600", color: "#666" },
+  tabLabel: { fontWeight: "bold", color: "#666" },
   activeTabLabel: { color: "#1a73e8" },
-  card: { backgroundColor: "#fff", borderRadius: 20, padding: 20, elevation: 4, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10 },
-  input: { height: 55, backgroundColor: "#f8f9fa", borderRadius: 12, paddingHorizontal: 15, marginBottom: 15, borderWidth: 1, borderColor: "#eee", fontSize: 16 },
-  label: { fontSize: 14, color: "#555", marginBottom: 5, marginLeft: 5, fontWeight: "600" },
-  allowanceContainer: { marginTop: 5 },
-  button: { backgroundColor: "#1a73e8", height: 55, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 10 },
-  buttonText: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  card: { backgroundColor: "#fff", borderRadius: 20, padding: 20, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  inputLabel: { fontSize: 14, fontWeight: "600", marginBottom: 5, color: "#444" },
+  input: { backgroundColor: "#f9f9f9", borderWidth: 1, borderColor: "#eee", borderRadius: 10, padding: 15, marginBottom: 15 },
+  parentSection: { backgroundColor: "#f0f7ff", padding: 15, borderRadius: 15, marginBottom: 15, borderLeftWidth: 5, borderLeftColor: "#1a73e8" },
+  parentSectionTitle: { fontSize: 12, fontWeight: "bold", color: "#1a73e8", marginBottom: 10 },
+  button: { backgroundColor: "#1a73e8", padding: 18, borderRadius: 12, alignItems: "center", marginTop: 10 },
+  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  label: { fontSize: 16, fontWeight: "600" }
 });

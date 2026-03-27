@@ -25,7 +25,7 @@ const getApiUrl = () => {
   return `http://${ip}:5000`;
 };
 
-const API_URL = getApiUrl();
+const API_URL = "http://192.168.199.153:5000";
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
