@@ -6,95 +6,123 @@ from ai.finance_ai import FinanceNN
 import os
 
 app = Flask(__name__)
-CORS(app)  # Ενεργοποίηση για σύνδεση με Frontend (React/Vue/Flutter)
+CORS(app)  # Επιτρέπει τη σύνδεση με το Frontend
 
 # Ρυθμίσεις Βάσης & Security
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///finance.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = 'kippy-bank-secret-key-2024' # Άλλαξέ το σε κάτι τυχαίο
+app.config['JWT_SECRET_KEY'] = 'kippy-bank-ultra-secret-2026' 
 jwt = JWTManager(app)
 
 db.init_app(app)
 
-# Dictionary για τα AI μοντέλα ανά οικογένεια
+# Dictionary για τα AI μοντέλα ανά οικογένεια (Lazy Loading)
 family_brains = {}
 
 def get_brain(user):
     """Επιστρέφει το AI μοντέλο της οικογένειας του χρήστη"""
+    # Αν είναι παιδί, ο εγκέφαλος ανήκει στον πατέρα του
     owner_id = user.parent_id if user.role == 'kid' and user.parent_id else user.id
     if owner_id not in family_brains:
         model_path = f"ai_models/family_{owner_id}.pkl"
         family_brains[owner_id] = FinanceNN(model_file=model_path)
     return family_brains[owner_id]
 
-# Αρχικοποίηση Βάσης Δεδομένων
+# Αρχικοποίηση Βάσης Δεδομένων και Φακέλων
 with app.app_context():
     if not os.path.exists('ai_models'): 
         os.makedirs('ai_models')
     db.create_all()
     print("--- Database & Folders Ready! ---")
 
-# --- 1. REGISTER ---
+# --- 1. REGISTER (Με Parent Verification για τα παιδιά) ---
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
     role = data.get('role', 'parent')
-    
-    # Αν είναι παιδί, ο πατέρας πρέπει να στείλει το parent_id του
-    new_user = User(
-        username=data['username'],
-        email=data['email'],
-        role=role,
-        parent_id=data.get('parent_id'),
-        weekly_allowance=data.get('weekly_allowance', 0.0)
-    )
-    new_user.set_password(data['password'])
-    db.session.add(new_user)
-    db.session.commit()
-    return jsonify(new_user.to_dict()), 201
+    parent_id = None
 
-# --- 2. LOGIN (Επιστρέφει JWT Token) ---
+    # Αν ο ρόλος είναι παιδί, απαιτούμε στοιχεία γονέα για ταυτοποίηση
+    if role == 'kid':
+        p_user = data.get('parent_username')
+        p_pass = data.get('parent_password')
+        
+        # Αναζήτηση και έλεγχος γονέα
+        parent = User.query.filter_by(username=p_user, role='parent').first()
+        if not parent or not parent.check_password(p_pass):
+            return jsonify({"error": "Parent verification failed! Incorrect parent credentials."}), 401
+        
+        parent_id = parent.id
+
+    # Έλεγχος αν το username ή το email υπάρχει ήδη
+    existing = User.query.filter((User.email == data['email']) | (User.username == data['username'])).first()
+    if existing:
+        return jsonify({"error": "Username or Email already exists!"}), 400
+
+    try:
+        new_user = User(
+            username=data['username'],
+            email=data['email'],
+            role=role,
+            parent_id=parent_id,
+            weekly_allowance=data.get('weekly_allowance', 0.0)
+        )
+        new_user.set_password(data['password']) # Ο κωδικός του νέου χρήστη
+        
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify(new_user.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Registration failed", "details": str(e)}), 500
+
+# --- 2. LOGIN (JWT Generation) ---
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
     user = User.query.filter_by(username=data.get('username')).first()
     
     if user and user.check_password(data.get('password')):
+        # Το identity πρέπει να είναι string για το JWT
         access_token = create_access_token(identity=str(user.id))
         return jsonify({
             "token": access_token,
             "user": user.to_dict()
         }), 200
         
-    return jsonify({"error": "Invalid credentials"}), 401
+    return jsonify({"error": "Invalid username or password"}), 401
 
 # --- 3. UPDATE BALANCE & AI ANALYSIS ---
 @app.route('/api/update_balance', methods=['POST'])
 @jwt_required()
 def update_balance():
     data = request.get_json()
-    user = db.session.get(User, data.get('user_id'))
+    user_id = data.get('user_id')
+    user = db.session.get(User, user_id)
+    
     if not user: return jsonify({"error": "User not found"}), 404
 
     amount = float(data.get('amount'))
     current_balance = user.get_balance()
 
-    # Έλεγχος για 0 balance
+    # Έλεγχος Υπολοίπου: Δεν επιτρέπουμε αγορά αν το balance γίνει αρνητικό
     if amount < 0 and (current_balance + amount) < 0:
         return jsonify({
-            "error": "Insufficient balance! Purchase denied.",
-            "current_balance": current_balance
+            "error": "Insufficient balance! Transaction blocked.",
+            "current_balance": current_balance,
+            "required": abs(amount)
         }), 400
 
     ai_analysis = {}
-    if amount < 0: 
+    if amount < 0: # Μόνο οι αγορές αναλύονται από το AI
         brain = get_brain(user)
-        ai_analysis = brain.analyze_transaction(abs(amount), data.get('category'), current_balance)
+        # abs(amount) για να στείλουμε θετική τιμή εξόδου στο AI
+        ai_analysis = brain.analyze_transaction(abs(amount), data.get('category', 'General'), current_balance)
         user.points += ai_analysis.get('points_earned', 0)
 
     new_tx = Transaction(
         amount=amount, 
-        category=data.get('category'), 
+        category=data.get('category', 'General'), 
         description=data.get('description', ''), 
         user_id=user.id
     )
@@ -102,7 +130,7 @@ def update_balance():
     db.session.commit()
     
     return jsonify({
-        "message": "Transaction successful",
+        "message": "Transaction recorded",
         "new_balance": user.get_balance(), 
         "ai_analysis": ai_analysis
     }), 200
@@ -118,9 +146,9 @@ def set_goal():
     user.goal_name = data.get('goal_name')
     user.goal_amount = float(data.get('goal_amount', 0))
     db.session.commit()
-    return jsonify({"message": "Goal updated successfully", "goal": user.goal_name})
+    return jsonify({"message": "Savings goal updated", "goal": user.goal_name})
 
-# --- 5. PREDICT GOAL (Behavioral AI) ---
+# --- 5. PREDICT GOAL (Behavioral Analysis) ---
 @app.route('/api/predict_goal/<int:user_id>', methods=['GET'])
 @jwt_required()
 def predict_goal(user_id):
@@ -136,7 +164,7 @@ def predict_goal(user_id):
     )
     return jsonify(prediction)
 
-# --- 6. TEACH AI (Parent Feedback) ---
+# --- 6. TEACH AI (Feedback από Γονέα) ---
 @app.route('/api/teach_ai', methods=['POST'])
 @jwt_required()
 def teach_ai():
@@ -145,11 +173,16 @@ def teach_ai():
     if not user: return jsonify({"error": "User not found"}), 404
 
     brain = get_brain(user)
-    # Προαιρετικά: Αν η κλάση FinanceNN έχει μέθοδο teach_ai, την καλούμε εδώ
-    # brain.teach_ai(...)
-    return jsonify({"message": "AI has been notified of the correct behavior!"})
+    # Εδώ καλείς τη μέθοδο teach_ai της κλάσης FinanceNN
+    brain.teach_ai(
+        amount=abs(float(data['amount'])),
+        category_name=data['category'],
+        balance=float(data['balance']),
+        correct_label=int(data['correct_label'])
+    )
+    return jsonify({"message": "AI model updated with behavioral feedback!"}), 200
 
-# --- 7. GET TRANSACTIONS (History) ---
+# --- 7. GET TRANSACTIONS (Ιστορικό) ---
 @app.route('/api/transactions/<int:user_id>', methods=['GET'])
 @jwt_required()
 def get_transactions(user_id):
@@ -157,7 +190,6 @@ def get_transactions(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
     
-    # Ταξινόμηση κατά ημερομηνία (πιο πρόσφατα πρώτα)
     txs = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.timestamp.desc()).all()
     
     return jsonify({
@@ -169,5 +201,5 @@ def get_transactions(user_id):
     }), 200
 
 if __name__ == '__main__':
-    # Running on 0.0.0.0 helps if you want to test from your phone
+    # Running on 0.0.0.0 for external device access (Mobile/Frontend)
     app.run(debug=True, host='0.0.0.0', port=5000)

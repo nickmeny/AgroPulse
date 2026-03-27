@@ -1,74 +1,53 @@
-import React, { useState, useEffect } from "react";
+import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useState } from "react";
 import {
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View,
-  Text,
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import Constants from "expo-constants";
 
-// --- DYNAMIC IP LOGIC ---
-const getApiUrl = () => {
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (!hostUri) {
-    return Platform.OS === "android" ? "http://10.0.2.2:5000" : "http://localhost:5000";
-  }
-  const ip = hostUri.split(":")[0];
-  return `http://${ip}:5000`;
-};
+const API_URL = "http://192.168.199.153:5000"; 
 
-const API_URL = "http://192.168.199.153:5000";
+type AuthMode = "LOGIN" | "REGISTER_PARENT" | "REGISTER_KID";
 
 export default function AuthScreen() {
-  const [isLogin, setIsLogin] = useState(true);
-  const [mode, setMode] = useState<"parent" | "kid">("parent");
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [allowance, setAllowance] = useState("10");
+  const [mode, setMode] = useState<AuthMode>("LOGIN");
   const [loading, setLoading] = useState(false);
-
   const router = useRouter();
 
-  // Έλεγχος αν υπάρχει ήδη token για αυτόματο redirect (προαιρετικό)
-  useEffect(() => {
-    const checkToken = async () => {
-      const token = await SecureStore.getItemAsync("userToken");
-      if (token) {
-        // router.replace("/(tabs)"); // Αν θες να μπαίνει αυτόματα αν έχει ξανασυνδεθεί
-      }
-    };
-    checkToken();
-  }, []);
+  const [username, setUsername] = useState(""); 
+  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(""); 
+  const [allowance, setAllowance] = useState("10");
+  const [parentUsername, setParentUsername] = useState("");
+  const [parentPassword, setParentPassword] = useState("");
 
   const handleAuth = async () => {
-    if (!username || !password || (!isLogin && !email)) {
-      Alert.alert("Προσοχή", "Συμπληρώστε όλα τα απαραίτητα πεδία.");
+    if (!username || !password) {
+      Alert.alert("Σφάλμα", "Συμπληρώστε username και κωδικό.");
       return;
     }
 
     setLoading(true);
     try {
-      const endpoint = isLogin ? "/api/login" : "/api/register";
-      
-      const payload: any = { 
-        username: username.trim(), 
-        password: password 
-      };
+      const endpoint = mode === "LOGIN" ? "/api/login" : "/api/register";
+      let payload: any = { username: username.trim(), password: password };
 
-      if (!isLogin) {
-        payload.email = email.trim();
-        payload.role = mode;
-        if (mode === "kid") {
+      if (mode !== "LOGIN") {
+        payload.role = mode === "REGISTER_KID" ? "kid" : "parent";
+        payload.email = email.trim() || `${username}@kippy.com`;
+        if (mode === "REGISTER_KID") {
           payload.weekly_allowance = parseFloat(allowance) || 0;
+          payload.parent_username = parentUsername.trim();
+          payload.parent_password = parentPassword;
         }
       }
 
@@ -81,156 +60,82 @@ export default function AuthScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        if (isLogin) {
-          // ΑΠΟΘΗΚΕΥΣΗ TOKEN ΚΑΙ REDIRECT
+        if (mode === "LOGIN") {
           await SecureStore.setItemAsync("userToken", data.token);
           await SecureStore.setItemAsync("userData", JSON.stringify(data.user));
-          
-          console.log("Login Success!");
-          router.replace("/(tabs)"); 
+          router.replace("/(tabs)/dashboard"); 
         } else {
-          Alert.alert("Επιτυχία", "Ο λογαριασμός δημιουργήθηκε! Κάντε είσοδο.");
-          setIsLogin(true);
+          Alert.alert("Επιτυχία!", "Ο λογαριασμός δημιουργήθηκε.");
+          setMode("LOGIN");
         }
       } else {
-        Alert.alert("Αποτυχία", data.error || "Λάθος στοιχεία.");
+        Alert.alert("Αποτυχία", data.error || "Ελέγξτε τα στοιχεία σας.");
       }
     } catch (error) {
-      Alert.alert("Σφάλμα Δικτύου", `Αδυναμία σύνδεσης στο ${API_URL}. Ελέγξτε αν τρέχει ο server.`);
+      Alert.alert("Σφάλμα", "Δεν βρέθηκε ο server.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
-      <ScrollView contentContainerStyle={styles.inner}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Text style={styles.logoText}>KippyBank</Text>
-          <Text style={styles.subtitle}>
-            {isLogin ? "Καλώς ορίσατε ξανά" : "Δημιουργήστε λογαριασμό"}
-          </Text>
+          <Text style={styles.logo}>KippyBank 🏦</Text>
+          <Text style={styles.subtitle}>Smart Finance for Families</Text>
         </View>
 
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-          />
+        <View style={styles.tabContainer}>
+          <TouchableOpacity onPress={() => setMode("LOGIN")} style={[styles.tab, mode === "LOGIN" && styles.activeTab]}>
+            <Text style={[styles.tabLabel, mode === "LOGIN" && styles.activeTabLabel]}>Login</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setMode("REGISTER_PARENT")} style={[styles.tab, mode === "REGISTER_PARENT" && styles.activeTab]}>
+            <Text style={[styles.tabLabel, mode === "REGISTER_PARENT" && styles.activeTabLabel]}>+Γονέας</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setMode("REGISTER_KID")} style={[styles.tab, mode === "REGISTER_KID" && styles.activeTab]}>
+            <Text style={[styles.tabLabel, mode === "REGISTER_KID" && styles.activeTabLabel]}>+Παιδί</Text>
+          </TouchableOpacity>
+        </View>
 
-          {!isLogin && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-              
-              <View style={styles.rolePicker}>
-                <TouchableOpacity 
-                  style={[styles.roleBtn, mode === 'parent' && styles.roleBtnActive]} 
-                  onPress={() => setMode('parent')}
-                >
-                  <Text style={mode === 'parent' ? styles.roleTextActive : styles.roleText}>Γονέας</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.roleBtn, mode === 'kid' && styles.roleBtnActive]} 
-                  onPress={() => setMode('kid')}
-                >
-                  <Text style={mode === 'kid' ? styles.roleTextActive : styles.roleText}>Παιδί</Text>
-                </TouchableOpacity>
-              </View>
+        <View style={styles.card}>
+          <TextInput style={styles.input} placeholder="Username" value={username} onChangeText={setUsername} autoCapitalize="none" />
+          {mode !== "LOGIN" && <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />}
+          <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
 
-              {mode === 'kid' && (
-                <TextInput
-                  style={styles.input}
-                  placeholder="Εβδομαδιαίο χαρτζιλίκι (€)"
-                  value={allowance}
-                  onChangeText={setAllowance}
-                  keyboardType="numeric"
-                />
-              )}
-            </>
+          {mode === "REGISTER_KID" && (
+            <View style={styles.parentSection}>
+              <Text style={styles.parentTitle}>ΕΓΚΡΙΣΗ ΓΟΝΕΑ 🛡️</Text>
+              <TextInput style={styles.input} placeholder="Username Γονέα" value={parentUsername} onChangeText={setParentUsername} autoCapitalize="none" />
+              <TextInput style={styles.input} placeholder="Password Γονέα" value={parentPassword} onChangeText={setParentPassword} secureTextEntry />
+              <TextInput style={styles.input} placeholder="Χαρτζιλίκι (€)" value={allowance} onChangeText={setAllowance} keyboardType="numeric" />
+            </View>
           )}
 
-          <TextInput
-            style={styles.input}
-            placeholder="Κωδικός πρόσβασης"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-
-          <TouchableOpacity 
-            style={[styles.mainButton, loading && { opacity: 0.7 }]} 
-            onPress={handleAuth}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {isLogin ? "Είσοδος" : "Εγγραφή"}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => setIsLogin(!isLogin)}
-          >
-            <Text style={styles.switchText}>
-              {isLogin
-                ? "Δεν έχετε λογαριασμό; Εγγραφείτε"
-                : "Έχετε ήδη λογαριασμό; Σύνδεση"}
-            </Text>
+          <TouchableOpacity style={styles.button} onPress={handleAuth} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{mode === "LOGIN" ? "ΕΙΣΟΔΟΣ" : "ΕΓΓΡΑΦΗ"}</Text>}
           </TouchableOpacity>
         </View>
-        <Text style={styles.footerIp}>Connecting to: {API_URL}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8f9fa" },
-  inner: { flexGrow: 1, justifyContent: "center", padding: 25 },
-  header: { alignItems: "center", marginBottom: 35 },
-  logoText: { fontSize: 36, fontWeight: "900", color: "#1a73e8" },
-  subtitle: { fontSize: 16, color: "#6c757d", marginTop: 5 },
-  form: { width: "100%" },
-  input: {
-    backgroundColor: "#fff",
-    height: 55,
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    marginBottom: 15,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  rolePicker: { flexDirection: 'row', marginBottom: 15, backgroundColor: '#eee', borderRadius: 12, padding: 4 },
-  roleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
-  roleBtnActive: { backgroundColor: '#fff' },
-  roleText: { color: '#666', fontWeight: '600' },
-  roleTextActive: { color: '#1a73e8', fontWeight: '700' },
-  mainButton: { backgroundColor: "#1a73e8", height: 55, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 10, elevation: 3 },
-  buttonText: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  switchButton: { marginTop: 20, alignItems: "center" },
-  switchText: { color: "#1a73e8", fontSize: 14, fontWeight: "500" },
-  footerIp: { textAlign: 'center', marginTop: 30, fontSize: 10, color: '#bbb' }
+  container: { flex: 1, backgroundColor: "#f4f7fa" },
+  scrollContent: { padding: 20, paddingTop: 60 },
+  header: { alignItems: "center", marginBottom: 30 },
+  logo: { fontSize: 32, fontWeight: "900", color: "#1a73e8" },
+  subtitle: { fontSize: 14, color: "#666" },
+  tabContainer: { flexDirection: "row", backgroundColor: "#e0e0e0", borderRadius: 12, padding: 5, marginBottom: 20 },
+  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
+  activeTab: { backgroundColor: "#fff" },
+  tabLabel: { fontWeight: "bold", color: "#666", fontSize: 12 },
+  activeTabLabel: { color: "#1a73e8" },
+  card: { backgroundColor: "#fff", borderRadius: 20, padding: 20, elevation: 5 },
+  input: { backgroundColor: "#f9f9f9", borderWidth: 1, borderColor: "#eee", borderRadius: 10, padding: 15, marginBottom: 12 },
+  parentSection: { backgroundColor: "#f0f7ff", padding: 15, borderRadius: 15, marginBottom: 10 },
+  parentTitle: { fontSize: 11, fontWeight: "bold", color: "#1a73e8", marginBottom: 10 },
+  button: { backgroundColor: "#1a73e8", padding: 18, borderRadius: 12, alignItems: "center" },
+  buttonText: { color: "#fff", fontWeight: "bold" },
 });
