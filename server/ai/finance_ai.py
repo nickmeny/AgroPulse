@@ -8,8 +8,9 @@ class FinanceNN:
     def __init__(self, model_file="finance_model.pkl"):
         self.category_map = {"Βιβλία": 1, "Αποταμίευση": 2, "Gaming": 3, "Γλυκά": 4}
         self.model_file = model_file
+        # Εδώ θα κρατάμε το ιστορικό για το Behavioral AI
+        self.transaction_history = [] 
         
-        # ΕΛΕΓΧΟΣ: Υπάρχει ήδη εκπαιδευμένο AI;
         if os.path.exists(self.model_file):
             print(f"--- Φόρτωση εκπαιδευμένου AI από {self.model_file} ---")
             self.model = joblib.load(self.model_file)
@@ -47,30 +48,20 @@ class FinanceNN:
             y.append(label)
         return np.array(X), np.array(y)
 
-    def teach_ai(self, amount, category_name, balance, correct_label):
-        """
-        Ο 'Pro' τρόπος: Ο γονέας διορθώνει το AI και αυτό ξανα-εκπαιδεύεται 
-        πάνω στο συγκεκριμένο παράδειγμα (Incremental Learning).
-        """
-        cat_id = self.category_map.get(category_name, 3)
-        percentage = amount / balance if balance > 0 else 1
-        X_new = np.array([[amount, cat_id, balance, percentage]])
-        y_new = np.array([correct_label])
-        
-        # Μερική επανεκπαίδευση
-        self.model.partial_fit(X_new, y_new)
-        self._save_model()
-        print("--- Το AI έμαθε από τη διόρθωση του γονέα! ---")
+    # --- BEHAVIORAL: Προσθήκη στο ιστορικό ---
+    def _add_to_history(self, amount, cat_id, ai_label):
+        self.transaction_history.append((amount, cat_id, ai_label))
+        # Κρατάμε μόνο τις τελευταίες 20 συναλλαγές για να μην γεμίσει η RAM
+        if len(self.transaction_history) > 20:
+            self.transaction_history.pop(0)
 
     def analyze_transaction(self, amount, category_name, balance):
         cat_id = self.category_map.get(category_name, 3)
         percentage = amount / balance if balance > 0 else 1
         
-        # Πρόβλεψη
         prediction = self.model.predict([[amount, cat_id, balance, percentage]])[0]
         probability = self.model.predict_proba([[amount, cat_id, balance, percentage]])[0][1]
 
-        # Λογική Feedback & Πόντων
         if prediction == 1:
             status = "APPROVED"
             points = int(amount * 5) if cat_id <= 2 else 10
@@ -80,6 +71,9 @@ class FinanceNN:
             points = 2
             message = "Το AI ανησυχεί. Αυτή η αγορά ίσως επηρεάσει τους στόχους σου. Σίγουρα το θες;"
 
+        # Ενημέρωση ιστορικού για το Behavioral AI
+        self._add_to_history(amount, cat_id, prediction)
+
         return {
             "status": status,
             "ai_confidence": f"{probability * 100:.2f}%",
@@ -88,14 +82,51 @@ class FinanceNN:
             "internal_prediction": int(prediction)
         }
 
-# --- PRO TESTING SCENARIO ---
+    # --- BEHAVIORAL: Πρόβλεψη Στόχου ---
+    def predict_goal_timeframe(self, target_amount, weekly_allowance, current_savings=0):
+        if len(self.transaction_history) < 3:
+            return {"error": "Χρειάζομαι περισσότερο ιστορικό για να προβλέψω."}
+
+        total_spent = sum(t[0] for t in self.transaction_history)
+        risky_spent = sum(t[0] for t in self.transaction_history if t[2] == 0)
+        risky_ratio = risky_spent / total_spent if total_spent > 0 else 0
+
+        # Υπολογίζουμε μέσο όρο εξόδων ανά εβδομάδα (υποθετικά 3 αγορές/βδομάδα)
+        avg_weekly_spend = (total_spent / len(self.transaction_history)) * 3
+        real_savings = weekly_allowance - avg_weekly_spend
+
+        if real_savings <= 0:
+            return {
+                "weeks_left": "Άπειρες",
+                "advice": "Προσοχή! Ξοδεύεις περισσότερα από όσα αποταμιεύεις. Ο στόχος απομακρύνεται!",
+                "status": "CRITICAL"
+            }
+
+        weeks_needed = (target_amount - current_savings) / real_savings
+        
+        # Behavioral Penalty
+        if risky_ratio > 0.4:
+            weeks_needed *= 1.2
+            advice = "Το AI βλέπει τάση παρορμητικών αγορών. Αν συνεχίσεις έτσι, ο στόχος θα καθυστερήσει 20%."
+        else:
+            advice = "Είσαι σε καλό δρόμο! Συνέχισε έτσι για να πάρεις τον στόχο σου στην ώρα του."
+
+        return {
+            "weeks_left": round(weeks_needed, 1),
+            "advice": advice,
+            "monthly_savings_est": round(real_savings * 4, 2)
+        }
+
+# --- ΤΕΣΤ ΛΕΙΤΟΥΡΓΙΑΣ ---
 if __name__ == "__main__":
     brain = FinanceNN()
     
-    # 1. Κανονικό Τεστ
-    res = brain.analyze_transaction(20, "Βιβλία", 100)
-    print(f"Απόφαση: {res['status']} | Μήνυμα: {res['message']}")
-
-    # 2. Προσομοίωση διόρθωσης από γονέα (Αν το AI έκανε λάθος)
-    # Έστω ότι το AI έκρινε λάθος μια αγορά. Ο γονέας λέει 'Όχι, αυτό είναι σωστό (1)'
-    brain.teach_ai(20, "Gaming", 100, 1)
+    # Προσομοίωση ιστορικού (3 αγορές)
+    brain.analyze_transaction(10, "Γλυκά", 100)
+    brain.analyze_transaction(50, "Gaming", 90)
+    brain.analyze_transaction(20, "Βιβλία", 40)
+    
+    # Πρόβλεψη για PC 1000€ με χαρτζιλίκι 50€/βδομάδα
+    prediction = brain.predict_goal_timeframe(1000, 50)
+    print(f"\nΣυμβουλή AI: {prediction['advice']}")
+    print(f"Εκτιμώμενες εβδομάδες: {prediction['weeks_left']}")
