@@ -13,7 +13,7 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<any>(null);
   const [userRole, setUserRole] = useState<string | null>(null); 
-  const [aiPrediction, setAiPrediction] = useState<any>(null); // ΠΡΟΣΘΗΚΗ: State για το AI
+  const [aiPrediction, setAiPrediction] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
 
@@ -31,7 +31,7 @@ export default function DashboardScreen() {
       const userObj = JSON.parse(storedUserString);
       setUserRole(userObj.role); 
 
-      // 1. Φέρνουμε τα Transactions (Όπως πριν)
+      // 1. Φέρνουμε τα δεδομένα (Backend: {"user": {...}, "history": []})
       const response = await fetch(`${API_URL}/api/transactions/${userObj.id}`, {
         method: "GET",
         headers: { 
@@ -41,21 +41,21 @@ export default function DashboardScreen() {
       });
       const data = await response.json();
 
-      // 2. ΠΡΟΣΘΗΚΗ: Φέρνουμε την Πρόβλεψη του Behavioral AI
-      const aiResponse = await fetch(`${API_URL}/api/predict_goal/${userObj.id}`, {
-        method: "GET",
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-      });
-      const aiData = await aiResponse.json();
+      // 2. AI Prediction (Μόνο αν είναι παιδί)
+      if (userObj.role === 'kid') {
+        const aiResponse = await fetch(`${API_URL}/api/predict_goal/${userObj.id}`, {
+          method: "GET",
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+        });
+        const aiData = await aiResponse.json();
+        if (aiResponse.ok) setAiPrediction(aiData);
+      }
 
       if (response.ok) {
-        setUserData(data);
-      }
-      if (aiResponse.ok) {
-        setAiPrediction(aiData); // Αποθηκεύουμε την ανάλυση του NN
+        setUserData(data.user); // Εδώ παίρνουμε το info του χρήστη
       }
 
     } catch (error) {
@@ -88,13 +88,29 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* SIDE BAR (ΠΡΟΣΕΧΤΗΚΕ: Παραμένει ίδιο) */}
+      {/* SIDE BAR */}
       <View style={styles.sideBar}>
         <View style={styles.sideTop}>
-          <TouchableOpacity style={styles.sideIconActive}>
+          <TouchableOpacity style={styles.sideIconActive} onPress={() => router.push("/dashboard")}>
             <Ionicons name="grid" size={24} color="#1a73e8" />
           </TouchableOpacity>
+
+          {/* ΚΟΥΜΠΙ ΠΡΟΣΘΗΚΗΣ ΧΡΗΜΑΤΩΝ (POPUP) */}
+          <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/popup")}>
+            <Ionicons name="card-outline" size={24} color="#666" />
+          </TouchableOpacity>
+
+          {/* ΚΟΥΜΠΙ ΜΕΤΑΦΟΡΑΣ (ΜΟΝΟ ΓΙΑ ΓΟΝΕΙΣ) */}
+          {userRole === 'parent' && (
+            <TouchableOpacity 
+              style={styles.sideIcon} 
+              onPress={() => router.push("/transaction")}
+            >
+              <Ionicons name="swap-horizontal" size={24} color="#666" />
+            </TouchableOpacity>
+          )}
         </View>
+
         <TouchableOpacity onPress={handleLogout} style={styles.logoutIcon}>
           <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
         </TouchableOpacity>
@@ -110,14 +126,14 @@ export default function DashboardScreen() {
               </View>
             )}
           </View>
-          <Text style={styles.userTitle}>@{userData?.username || "Φόρτωση..."}</Text>
+          <Text style={styles.userTitle}>@{userData?.username || "Guest"}</Text>
         </View>
 
         <ScrollView 
           contentContainerStyle={styles.scrollContainer}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
         >
-          {/* BALANCE CARD (Παραμένει ίδιο) */}
+          {/* BALANCE CARD */}
           <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>ΔΙΑΘΕΣΙΜΟ ΥΠΟΛΟΙΠΟ</Text>
             <Text style={styles.balanceAmount}>
@@ -125,7 +141,7 @@ export default function DashboardScreen() {
             </Text>
           </View>
 
-          {/* ΝΕΟ: AI BEHAVIORAL INSIGHT CARD */}
+          {/* AI CARD */}
           {userRole === 'kid' && (
             <View style={[styles.aiCard, aiPrediction?.status === "CRITICAL" && styles.aiCardCritical]}>
               <View style={styles.aiHeader}>
@@ -134,11 +150,11 @@ export default function DashboardScreen() {
               </View>
               
               {aiPrediction?.error ? (
-                <Text style={styles.aiAdvice}>Κάνε μερικές αγορές για να αναλύσω τη συμπεριφορά σου! 🦉</Text>
+                <Text style={styles.aiAdvice}>Κάνε μερικές αγορές για ανάλυση! 🦉</Text>
               ) : (
                 <>
                   <Text style={styles.aiPredictionText}>
-                    Πρόβλεψη Στόχου: <Text style={styles.aiWeeks}>{aiPrediction?.weeks_left}</Text> εβδομάδες
+                    Πρόβλεψη Στόχου: <Text style={styles.aiWeeks}>{aiPrediction?.weeks_left}</Text> εβδ.
                   </Text>
                   <Text style={styles.aiAdvice}>"{aiPrediction?.advice}"</Text>
                 </>
@@ -146,14 +162,14 @@ export default function DashboardScreen() {
             </View>
           )}
 
-          {/* GOAL BOX (Παραμένει ίδιο) */}
-          {userData?.goal?.name && (
+          {/* GOAL BOX */}
+          {userData?.goal_name && (
             <View style={styles.goalBox}>
-              <Text style={styles.goalTitle}>Στόχος: {userData.goal.name}</Text>
+              <Text style={styles.goalTitle}>Στόχος: {userData.goal_name}</Text>
               <View style={styles.progressBg}>
-                <View style={[styles.progressFill, { width: `${Math.min((userData.balance / userData.goal.amount) * 100, 100)}%` }]} />
+                <View style={[styles.progressFill, { width: `${Math.min((userData.balance / (userData.goal_amount || 1)) * 100, 100)}%` }]} />
               </View>
-              <Text style={styles.goalDetail}>{userData.balance}€ / {userData.goal.amount}€</Text>
+              <Text style={styles.goalDetail}>{userData.balance}€ / {userData.goal_amount}€</Text>
             </View>
           )}
         </ScrollView>
@@ -166,11 +182,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f4f7fa", flexDirection: 'row' },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   sideBar: { width: 70, backgroundColor: "#fff", borderRightWidth: 1, borderRightColor: "#eee", alignItems: "center", paddingVertical: 40, justifyContent: "space-between" },
-  sideTop: { gap: 30 },
-  sideIconActive: { padding: 10, backgroundColor: "#e8f0fe", borderRadius: 15 },
+  sideTop: { gap: 35, alignItems: 'center' },
+  sideIconActive: { padding: 12, backgroundColor: "#e8f0fe", borderRadius: 15 },
+  sideIcon: { padding: 12 },
   logoutIcon: { padding: 10 },
   mainContent: { flex: 1 },
-  topHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 40 : 15, marginBottom: 20 },
+  topHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 45 : 15, marginBottom: 20 },
   headerLeft: { minWidth: 80 },
   coinBadge: { backgroundColor: "#fff", padding: 8, borderRadius: 12, elevation: 2 },
   coinText: { fontWeight: "bold", color: "#f39c12", fontSize: 14 },
@@ -179,16 +196,13 @@ const styles = StyleSheet.create({
   balanceCard: { backgroundColor: "#1a73e8", borderRadius: 25, padding: 30, marginBottom: 20, elevation: 5 },
   balanceLabel: { color: "#e0e0e0", fontWeight: "bold", fontSize: 10, marginBottom: 5, letterSpacing: 1 },
   balanceAmount: { fontSize: 38, fontWeight: "900", color: "#fff" },
-
-  // ΣΤΥΛ ΓΙΑ ΤΗ ΝΕΑ AI ΚΑΡΤΑ
   aiCard: { backgroundColor: "#1c1c1e", borderRadius: 20, padding: 20, marginBottom: 20, borderLeftWidth: 5, borderLeftColor: "#FFD700" },
   aiCardCritical: { borderLeftColor: "#ff4757" },
   aiHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  aiTag: { color: "#FFD700", fontSize: 10, fontWeight: "bold", marginLeft: 8, letterSpacing: 0.5 },
+  aiTag: { color: "#FFD700", fontSize: 10, fontWeight: "bold", marginLeft: 8 },
   aiPredictionText: { color: "#fff", fontSize: 16, fontWeight: "600", marginBottom: 6 },
   aiWeeks: { color: "#00d1b2", fontSize: 24, fontWeight: "900" },
-  aiAdvice: { color: "#aaa", fontSize: 13, fontStyle: "italic", lineHeight: 18 },
-
+  aiAdvice: { color: "#aaa", fontSize: 13, fontStyle: "italic" },
   goalBox: { backgroundColor: "#fff", padding: 20, borderRadius: 20, elevation: 2 },
   goalTitle: { fontWeight: "bold", color: "#444", marginBottom: 10 },
   progressBg: { height: 8, backgroundColor: "#eee", borderRadius: 4, overflow: "hidden" },
