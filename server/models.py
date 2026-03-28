@@ -18,9 +18,10 @@ class User(db.Model):
     goal_name = db.Column(db.String(100), nullable=True)
     goal_amount = db.Column(db.Float, default=0.0)
 
+    # Σχέσεις (Relationships)
     transactions = db.relationship('Transaction', backref='owner', lazy=True, cascade="all, delete-orphan")
-    # Σχέση με Pockets
     pockets = db.relationship('Pocket', backref='owner', lazy=True, cascade="all, delete-orphan")
+    investments = db.relationship('Investment', backref='owner', lazy=True, cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -29,7 +30,7 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def get_balance(self):
-        # Μετράμε μόνο όσα έχουν γίνει 'approved'
+        # Υπολογίζουμε μόνο τις εγκεκριμένες (approved) συναλλαγές
         total_tx = sum(t.amount for t in self.transactions if t.status == 'approved')
         locked_in_pockets = sum(p.balance for p in self.pockets)
         return round(total_tx - locked_in_pockets, 2)
@@ -68,24 +69,7 @@ class Transaction(db.Model):
     amount = db.Column(db.Float, nullable=False)
     category = db.Column(db.String(50))
     description = db.Column(db.String(200))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "amount": self.amount,
-            "category": self.category,
-            "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        
-class Transaction(db.Model):
-    __tablename__ = 'transactions'
-    id = db.Column(db.Integer, primary_key=True)
-    amount = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(50))
-    description = db.Column(db.String(200))
-    # 'approved' για έσοδα/μισθό, 'pending' για αγορές παιδιού
+    # 'approved' (για έσοδα/εγκεκριμένα) ή 'pending' (για αιτήματα αγοράς)
     status = db.Column(db.String(20), default='approved') 
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
@@ -96,6 +80,26 @@ class Transaction(db.Model):
             "amount": self.amount,
             "category": self.category,
             "description": self.description,
+            "status": self.status,
+            "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+class Investment(db.Model):
+    __tablename__ = 'investments'
+    id = db.Column(db.Integer, primary_key=True)
+    asset_name = db.Column(db.String(50), nullable=False)
+    coins_invested = db.Column(db.Integer, nullable=False)
+    buy_price = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(20), default='pending') # 'pending' ή 'approved'
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "asset_name": self.asset_name,
+            "coins_invested": self.coins_invested,
+            "buy_price": self.buy_price,
             "status": self.status,
             "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
