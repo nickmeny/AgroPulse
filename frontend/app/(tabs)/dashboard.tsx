@@ -21,63 +21,52 @@ export default function DashboardScreen() {
     try {
       const token = await SecureStore.getItemAsync("userToken");
       const storedUser = await SecureStore.getItemAsync("userData");
-      
-      if (!token || !storedUser) { 
-        router.replace("/"); 
-        return; 
-      }
+      if (!token || !storedUser) { router.replace("/"); return; }
       
       const userObj = JSON.parse(storedUser);
       setUserRole(userObj.role);
 
-      // Φόρτωση δεδομένων χρήστη & υπολοίπου
       const response = await fetch(`${API_URL}/api/transactions/${userObj.id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const data = await response.json();
-      if (response.ok) setUserData(data.user);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUserData(data.user);
+      }
 
-      // Αν είναι παιδί, φόρτωσε την AI πρόβλεψη για τον στόχο
       if (userObj.role === 'kid') {
         const aiRes = await fetch(`${API_URL}/api/predict_goal/${userObj.id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        const aiData = await aiRes.json();
-        if (aiRes.ok) setAiPrediction(aiData);
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          setAiPrediction(aiData);
+        }
       }
     } catch (e) { 
-      console.error("Fetch Error:", e); 
+      console.error("Dashboard Fetch Error:", e); 
     } finally { 
       setLoading(false); 
       setRefreshing(false); 
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchData();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { fetchData(); }, []));
 
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#1a73e8" />
-      </View>
-    );
-  }
+  if (loading) return <View style={{flex:1, justifyContent:'center'}}><ActivityIndicator size="large" color="#1a73e8" /></View>;
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* --- SIDE BAR ΔΥΝΑΜΙΚΟ --- */}
+      {/* --- SIDE BAR --- */}
       <View style={styles.sideBar}>
         <View style={styles.sideTop}>
           <TouchableOpacity style={styles.sideIconActive}>
             <Ionicons name="grid" size={24} color="#1a73e8" />
           </TouchableOpacity>
-
+          
           {userRole === 'kid' && (
             <>
               <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/goals")}>
@@ -86,7 +75,9 @@ export default function DashboardScreen() {
               <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/pockets")}>
                 <Ionicons name="wallet-outline" size={24} color="#666" />
               </TouchableOpacity>
-              {/* ΤΟ ΠΑΙΔΙ ΠΗΓΑΙΝΕΙ ΣΤΗΝ ΟΘΟΝΗ ΣΠΑΤΑΛΗΣ (SPEND) */}
+              <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/invest")}>
+                <Ionicons name="stats-chart-outline" size={24} color="#666" />
+              </TouchableOpacity>
               <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/spend")}>
                 <Ionicons name="cart-outline" size={24} color="#666" />
               </TouchableOpacity>
@@ -94,7 +85,6 @@ export default function DashboardScreen() {
           )}
 
           {userRole === 'parent' && (
-            /* Ο ΓΟΝΕΑΣ ΠΗΓΑΙΝΕΙ ΣΤΗΝ ΟΘΟΝΗ ΜΕΤΑΦΟΡΑΣ (TRANSACTION) */
             <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/transaction")}>
               <Ionicons name="swap-horizontal" size={24} color="#666" />
             </TouchableOpacity>
@@ -106,7 +96,7 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* --- ΚΥΡΙΩΣ ΠΕΡΙΕΧΟΜΕΝΟ --- */}
+      {/* --- MAIN CONTENT --- */}
       <View style={styles.mainContent}>
         <View style={styles.topHeader}>
           <View style={styles.headerLeft}>
@@ -120,21 +110,16 @@ export default function DashboardScreen() {
         </View>
 
         <ScrollView 
-          contentContainerStyle={styles.scrollContainer}
-          refreshControl={
-            <RefreshControl 
-              refreshing={refreshing} 
-              onRefresh={() => { setRefreshing(true); fetchData(); }} 
-            />
-          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); fetchData();}} />}
+          contentContainerStyle={{ paddingBottom: 20 }}
         >
-          {/* ΚΑΡΤΑ ΥΠΟΛΟΙΠΟΥ */}
+          {/* ΚΑΡΤΑ ΥΠΟΛΟΙΠΟΥ + ΚΟΥΜΠΙ POPUP ΓΙΑ ΓΟΝΕΙΣ */}
           <View style={styles.balanceCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={styles.balanceLabel}>ΔΙΑΘΕΣΙΜΟ ΥΠΟΛΟΙΠΟ</Text>
               {userRole === 'parent' && (
-                <TouchableOpacity onPress={() => router.push("/popup")} style={styles.addMoneyBtn}>
-                  <Ionicons name="add-circle" size={26} color="#fff" />
+                <TouchableOpacity onPress={() => router.push("/popup")}>
+                  <Ionicons name="add-circle" size={28} color="#fff" />
                 </TouchableOpacity>
               )}
             </View>
@@ -143,40 +128,25 @@ export default function DashboardScreen() {
             </Text>
           </View>
 
-          {/* AI ΣΥΜΒΟΥΛΟΣ (ΜΟΝΟ ΓΙΑ ΠΑΙΔΙΑ) */}
+          {/* AI ADVISOR ΜΟΝΟ ΓΙΑ ΠΑΙΔΙΑ */}
           {userRole === 'kid' && (
-            <View style={[
-              styles.aiCard, 
-              aiPrediction?.status === "CRITICAL" && styles.aiCardCritical
-            ]}>
-              <View style={styles.aiHeader}>
-                <Ionicons name="analytics" size={18} color="#FFD700" />
-                <Text style={styles.aiTag}>AI FINANCE ADVISOR</Text>
+            <View style={[styles.aiCard, aiPrediction?.status === "CRITICAL" && styles.aiCardCritical]}>
+              <View style={{flexDirection:'row', alignItems:'center', marginBottom: 8}}>
+                 <Ionicons name="analytics" size={16} color="#FFD700" />
+                 <Text style={styles.aiTag}>AI FINANCE ADVISOR</Text>
               </View>
-              <Text style={styles.aiAdvice}>
-                "{aiPrediction?.advice || "Κάνε μια αγορά για να αναλύσω τις συνήθειές σου!"}"
-              </Text>
+              <Text style={styles.aiAdvice}>"{aiPrediction?.advice || "Κάνε μια αγορά για να την αναλύσω!"}"</Text>
             </View>
           )}
 
-          {/* ΠΡΟΟΔΟΣ ΣΤΟΧΟΥ */}
-          {userData?.goal_name && (
+          {/* ΠΡΟΟΔΟΣ ΣΤΟΧΟΥ (ΑΝ ΥΠΑΡΧΕΙ) */}
+          {userData?.goal?.name && (
             <View style={styles.goalBox}>
-              <View style={styles.goalHeaderRow}>
-                <Text style={styles.goalTitle}>Στόχος: {userData.goal_name}</Text>
-                <Ionicons name="flag-outline" size={18} color="#1a73e8" />
-              </View>
+              <Text style={styles.goalTitle}>Στόχος: {userData.goal.name}</Text>
               <View style={styles.progressBg}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { width: `${Math.min((userData.balance / (userData.goal_amount || 1)) * 100, 100)}%` }
-                  ]} 
-                />
+                <View style={[styles.progressFill, { width: `${Math.min((userData.balance / (userData.goal.amount || 1)) * 100, 100)}%` }]} />
               </View>
-              <Text style={styles.goalDetail}>
-                {userData.balance.toFixed(2)}€ / {userData.goal_amount}€
-              </Text>
+              <Text style={styles.goalDetail}>{userData.balance.toFixed(2)}€ / {userData.goal.amount}€</Text>
             </View>
           )}
         </ScrollView>
@@ -187,72 +157,26 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f4f7fa", flexDirection: 'row' },
-  sideBar: { 
-    width: 70, 
-    backgroundColor: "#fff", 
-    borderRightWidth: 1, 
-    borderRightColor: "#eee", 
-    alignItems: "center", 
-    paddingVertical: 40, 
-    justifyContent: "space-between" 
-  },
-  sideTop: { gap: 30, alignItems: 'center' },
+  sideBar: { width: 70, backgroundColor: "#fff", borderRightWidth: 1, borderRightColor: "#eee", alignItems: "center", paddingVertical: 40, justifyContent: "space-between" },
+  sideTop: { gap: 25, alignItems: 'center' },
   sideIcon: { padding: 12 },
   sideIconActive: { padding: 12, backgroundColor: "#e8f0fe", borderRadius: 15 },
-  mainContent: { flex: 1 },
-  topHeader: { 
-    flexDirection: "row", 
-    justifyContent: "space-between", 
-    alignItems: "center", 
-    paddingHorizontal: 20, 
-    paddingTop: Platform.OS === 'ios' ? 10 : 50, 
-    marginBottom: 20 
-  },
-  headerLeft: { minWidth: 80 },
-  coinBadge: { 
-    backgroundColor: "#fff", 
-    padding: 8, 
-    borderRadius: 12, 
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4
-  },
+  mainContent: { flex: 1, padding: 20 },
+  topHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: Platform.OS === 'ios' ? 10 : 40, marginBottom: 20 },
+  headerLeft: { minWidth: 60 },
+  coinBadge: { backgroundColor: "#fff", padding: 8, borderRadius: 12, elevation: 2 },
   coinText: { fontWeight: "bold", color: "#f39c12" },
   userTitle: { fontSize: 18, fontWeight: "900", color: "#333" },
-  scrollContainer: { paddingHorizontal: 20, paddingBottom: 30 },
-  balanceCard: { 
-    backgroundColor: "#1a73e8", 
-    borderRadius: 25, 
-    padding: 25, 
-    marginBottom: 20,
-    elevation: 8,
-    shadowColor: "#1a73e8",
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 }
-  },
-  balanceLabel: { color: "rgba(255,255,255,0.8)", fontWeight: "bold", fontSize: 11, letterSpacing: 1 },
-  balanceAmount: { fontSize: 36, fontWeight: "900", color: "#fff", marginTop: 5 },
-  addMoneyBtn: { padding: 5 },
+  balanceCard: { backgroundColor: "#1a73e8", borderRadius: 25, padding: 25, marginBottom: 20, elevation: 5 },
+  balanceLabel: { color: "#fff", opacity: 0.8, fontSize: 11, fontWeight: "bold", letterSpacing: 0.5 },
+  balanceAmount: { fontSize: 34, fontWeight: "bold", color: "#fff", marginTop: 5 },
   aiCard: { backgroundColor: "#1c1c1e", borderRadius: 20, padding: 20, marginBottom: 20 },
   aiCardCritical: { borderLeftWidth: 5, borderLeftColor: "#ff4757" },
-  aiHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  aiTag: { color: "#FFD700", fontSize: 10, fontWeight: "bold", marginLeft: 8, letterSpacing: 1 },
-  aiAdvice: { color: "#ddd", fontSize: 14, fontStyle: "italic", lineHeight: 20 },
-  goalBox: { 
-    backgroundColor: "#fff", 
-    padding: 20, 
-    borderRadius: 22, 
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 10
-  },
-  goalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  goalTitle: { fontWeight: "800", color: "#333", fontSize: 15 },
-  progressBg: { height: 12, backgroundColor: "#f0f0f0", borderRadius: 6, overflow: 'hidden' },
-  progressFill: { height: "100%", backgroundColor: "#1a73e8", borderRadius: 6 },
-  goalDetail: { textAlign: "right", fontSize: 12, marginTop: 8, color: "#888", fontWeight: "600" }
+  aiTag: { color: "#FFD700", fontSize: 10, fontWeight: "bold", marginLeft: 5 },
+  aiAdvice: { color: "#ddd", fontStyle: "italic", lineHeight: 20 },
+  goalBox: { backgroundColor: "#fff", padding: 20, borderRadius: 20, elevation: 2 },
+  goalTitle: { fontWeight: "bold", marginBottom: 10 },
+  progressBg: { height: 10, backgroundColor: "#eee", borderRadius: 5, overflow: 'hidden' },
+  progressFill: { height: "100%", backgroundColor: "#1a73e8" },
+  goalDetail: { textAlign: 'right', fontSize: 12, marginTop: 5, color: "#888" }
 });

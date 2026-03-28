@@ -78,3 +78,21 @@ class Transaction(db.Model):
             "category": self.category,
             "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
+        
+class Investment(db.Model):
+    __tablename__ = 'investments'
+    id = db.Column(db.Integer, primary_key=True)
+    asset_name = db.Column(db.String(50), nullable=False) # π.χ. "Bitcoin", "Apple Stock"
+    coins_invested = db.Column(db.Integer, nullable=False)
+    buy_price = db.Column(db.Float, nullable=False) # Η τιμή τη στιγμή της αγοράς
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "asset_name": self.asset_name,
+            "coins_invested": self.coins_invested,
+            "buy_price": self.buy_price,
+            "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        }

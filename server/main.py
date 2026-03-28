@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from models import db, User, Transaction, Pocket
+from models import db, User, Transaction, Pocket, Investment
 from ai.finance_ai import FinanceNN 
+import random
 import os
 
 app = Flask(__name__)
@@ -153,6 +154,96 @@ def get_transactions(user_id):
     user = db.session.get(User, user_id)
     txs = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.timestamp.desc()).all()
     return jsonify({"user": user.to_dict(), "history": [t.to_dict() for t in txs]})
+
+@app.route('/api/invest/prices', methods=['GET'])
+@jwt_required()
+def get_mock_prices():
+    """Επιστρέφει τυχαίες τιμές για ψεύτικα assets"""
+    assets = {
+        "KippyCoin": round(random.uniform(10, 100), 2),
+        "SpaceX_Stock": round(random.uniform(150, 200), 2),
+        "Roblox_Shares": round(random.uniform(30, 60), 2),
+        "Gold_Token": round(random.uniform(1800, 2000), 2)
+    }
+    return jsonify(assets)
+
+@app.route('/api/invest/buy', methods=['POST'])
+@jwt_required()
+def buy_investment():
+    data = request.get_json()
+    user = db.session.get(User, data.get('user_id'))
+    
+    asset = data.get('asset_name')
+    coins_to_spend = int(data.get('coins'))
+    current_price = float(data.get('current_price')) # Η τιμή που βλέπει το παιδί στο UI
+
+    if user.points < coins_to_spend:
+        return jsonify({"error": "Not enough coins (points)!"}), 400
+
+    try:
+        new_inv = Investment(
+            asset_name=asset,
+            coins_invested=coins_to_spend,
+            buy_price=current_price,
+            user_id=user.id
+        )
+        user.points -= coins_to_spend # Αφαίρεση coins
+        db.session.add(new_inv)
+        db.session.commit()
+        return jsonify({"message": f"Invested in {asset}!", "remaining_points": user.points}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/invest/portfolio/<int:user_id>', methods=['GET'])
+@jwt_required()
+def get_portfolio(user_id):
+    user = db.session.get(User, user_id)
+    investments = Investment.query.filter_by(user_id=user_id).all()
+    
+    # Logic για να υπολογίσουμε αν κερδίζει ή χάνει (Simulation)
+    portfolio_data = []
+    for inv in investments:
+        # "Τρέχουσα" τιμή (τυχαία για το demo)
+        current_mock_price = inv.buy_price * random.uniform(0.8, 1.3) 
+        profit_loss = (current_mock_price - inv.buy_price) / inv.buy_price * 100
+        
+        d = inv.to_dict()
+        d['current_value_factor'] = round(current_mock_price, 2)
+        d['profit_loss_percentage'] = round(profit_loss, 2)
+        portfolio_data.append(d)
+        
+    return jsonify({
+        "total_coins_available": user.points,
+        "active_investments": portfolio_data
+    })
+
+@app.route('/api/invest/sell', methods=['POST'])
+@jwt_required()
+def sell_investment():
+    data = request.get_json()
+    user = db.session.get(User, data.get('user_id'))
+    inv = db.session.get(Investment, data.get('investment_id'))
+    
+    if not inv or inv.user_id != user.id:
+        return jsonify({"error": "Investment not found"}), 404
+
+    # Υπολογισμός επιστροφής coins (απλή λογική)
+    # Αν η τιμή ανέβηκε 20%, παίρνει πίσω τα coins του + 20%
+    current_mock_price = inv.buy_price * random.uniform(0.8, 1.4) 
+    multiplier = current_mock_price / inv.buy_price
+    coins_returned = int(inv.coins_invested * multiplier)
+
+    user.points += coins_returned
+    db.session.delete(inv)
+    db.session.commit()
+    
+    return jsonify({
+        "message": f"Sold {inv.asset_name}!",
+        "coins_returned": coins_returned,
+        "new_points_total": user.points
+    })
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
