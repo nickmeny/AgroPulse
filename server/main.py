@@ -78,24 +78,36 @@ def transfer_to_kid():
     db.session.commit()
     return jsonify({"message": "Success", "parent_balance": parent.get_balance(), "kid_balance": kid.get_balance()})
 
-# --- 3. BALANCE & AI ANALYSIS ---
 @app.route('/api/update_balance', methods=['POST'])
 @jwt_required()
 def update_balance():
     data = request.get_json()
     user = db.session.get(User, data.get('user_id'))
     amount = float(data.get('amount'))
-    if amount < 0 and (user.get_balance() + amount) < 0:
-        return jsonify({"error": "Insufficient main balance!"}), 400
-    ai_analysis = {}
-    if amount < 0:
-        brain = get_brain(user)
-        ai_analysis = brain.analyze_transaction(abs(amount), data.get('category', 'General'), user.get_balance())
-        user.points += ai_analysis.get('points_earned', 0)
-    db.session.add(Transaction(amount=amount, category=data.get('category'), description=data.get('description', ''), user_id=user.id))
-    db.session.commit()
-    return jsonify({"new_balance": user.get_balance(), "ai_analysis": ai_analysis})
+    
+    # Αν είναι θετικό (π.χ. ο γονέας του έδωσε λεφτά), μπαίνει κατευθείαν
+    if amount >= 0:
+        new_tx = Transaction(amount=amount, category=data.get('category'), status='approved', user_id=user.id)
+        db.session.add(new_tx)
+        db.session.commit()
+        return jsonify({"message": "Funds added!", "new_balance": user.get_balance()})
 
+    # Αν είναι αρνητικό (Αγορά), πάει για έγκριση
+    if amount < 0:
+        if (user.get_balance() + amount) < 0:
+            return jsonify({"error": "Insufficient balance!"}), 400
+        
+        # Δημιουργούμε την "εκκρεμή" συναλλαγή
+        pending_tx = Transaction(
+            amount=amount, 
+            category=data.get('category'), 
+            description=data.get('description', ''),
+            status='pending', 
+            user_id=user.id
+        )
+        db.session.add(pending_tx)
+        db.session.commit()
+        return jsonify({"message": "Purchase request sent to parent!", "status": "pending"})
 # --- 4. POCKETS (Create & Move Money) ---
 @app.route('/api/pockets/create', methods=['POST'])
 @jwt_required()
@@ -243,6 +255,51 @@ def sell_investment():
         "coins_returned": coins_returned,
         "new_points_total": user.points
     })
+
+@app.route('/api/parent/pending_purchases/<int:parent_id>', methods=['GET'])
+@jwt_required()
+def get_pending_purchases(parent_id):
+    """Ο γονέας βλέπει τι θέλουν να αγοράσουν τα παιδιά του"""
+    kids = User.query.filter_by(parent_id=parent_id).all()
+    kid_ids = [k.id for k in kids]
+    
+    pending = Transaction.query.filter(
+        Transaction.user_id.in_(kid_ids), 
+        Transaction.status == 'pending'
+    ).all()
+    
+    return jsonify([p.to_dict() for p in pending])
+
+@app.route('/api/parent/authorize_purchase', methods=['POST'])
+@jwt_required()
+def authorize_purchase():
+    """Ο γονέας εγκρίνει την αγορά και τότε αφαιρούνται τα λεφτά"""
+    data = request.get_json()
+    tx = db.session.get(Transaction, data.get('transaction_id'))
+    decision = data.get('decision') # 'approved' ή 'rejected'
+    
+    if not tx: return jsonify({"error": "Transaction not found"}), 404
+    
+    user = db.session.get(User, tx.user_id)
+
+    if decision == 'approved':
+        # Τώρα τρέχουμε το AI για να δώσει πόντους, αφού εγκρίθηκε η αγορά!
+        brain = get_brain(user)
+        ai_analysis = brain.analyze_transaction(abs(tx.amount), tx.category, user.get_balance())
+        user.points += ai_analysis.get('points_earned', 0)
+        
+        tx.status = 'approved'
+        db.session.commit()
+        return jsonify({
+            "message": "Purchase approved!", 
+            "new_balance": user.get_balance(),
+            "ai_points_earned": ai_analysis.get('points_earned', 0)
+        })
+    
+    else:
+        db.session.delete(tx) # Αν απορριφθεί, τη σβήνουμε
+        db.session.commit()
+        return jsonify({"message": "Purchase rejected and deleted."})
 
 
 if __name__ == '__main__':

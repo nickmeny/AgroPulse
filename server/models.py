@@ -29,8 +29,8 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def get_balance(self):
-        # Το κύριο balance είναι οι συναλλαγές ΜΕΙΟ όσα είναι κλειδωμένα σε pockets
-        total_tx = sum(t.amount for t in self.transactions)
+        # Μετράμε μόνο όσα έχουν γίνει 'approved'
+        total_tx = sum(t.amount for t in self.transactions if t.status == 'approved')
         locked_in_pockets = sum(p.balance for p in self.pockets)
         return round(total_tx - locked_in_pockets, 2)
 
@@ -79,20 +79,23 @@ class Transaction(db.Model):
             "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
         
-class Investment(db.Model):
-    __tablename__ = 'investments'
+class Transaction(db.Model):
+    __tablename__ = 'transactions'
     id = db.Column(db.Integer, primary_key=True)
-    asset_name = db.Column(db.String(50), nullable=False) # π.χ. "Bitcoin", "Apple Stock"
-    coins_invested = db.Column(db.Integer, nullable=False)
-    buy_price = db.Column(db.Float, nullable=False) # Η τιμή τη στιγμή της αγοράς
+    amount = db.Column(db.Float, nullable=False)
+    category = db.Column(db.String(50))
+    description = db.Column(db.String(200))
+    # 'approved' για έσοδα/μισθό, 'pending' για αγορές παιδιού
+    status = db.Column(db.String(20), default='approved') 
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     def to_dict(self):
         return {
             "id": self.id,
-            "asset_name": self.asset_name,
-            "coins_invested": self.coins_invested,
-            "buy_price": self.buy_price,
+            "amount": self.amount,
+            "category": self.category,
+            "description": self.description,
+            "status": self.status,
             "date": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         }
