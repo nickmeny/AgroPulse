@@ -172,10 +172,10 @@ def get_transactions(user_id):
 def get_mock_prices():
     """Επιστρέφει τυχαίες τιμές για ψεύτικα assets"""
     assets = {
-        "KippyCoin": round(random.uniform(10, 100), 2),
-        "SpaceX_Stock": round(random.uniform(150, 200), 2),
-        "Roblox_Shares": round(random.uniform(30, 60), 2),
-        "Gold_Token": round(random.uniform(1800, 2000), 2)
+        "Lazy": round(5, 2),
+        "Kippy_Coin": round(random.uniform(150, 200), 2),
+        "Parkel AI": round(random.uniform(30, 60), 2),
+        "NBG": round(random.uniform(1800, 2000), 2)
     }
     return jsonify(assets)
 

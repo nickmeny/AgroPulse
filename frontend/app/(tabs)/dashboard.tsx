@@ -96,7 +96,7 @@ export default function DashboardScreen() {
                 </View>
               </TouchableOpacity>
               <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/transaction")}>
-                <Ionicons name="list-outline" size={26} color="#666" />
+                <Ionicons name="swap-horizontal" size={26} color="#666" />
               </TouchableOpacity>
             </>
           )}
