@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
-import {
-  View, Text, StyleSheet, SafeAreaView, ActivityIndicator,
-  ScrollView, RefreshControl, Platform, StatusBar, TouchableOpacity
+import { 
+  View, Text, StyleSheet, SafeAreaView, ActivityIndicator, 
+  ScrollView, RefreshControl, Platform, StatusBar, TouchableOpacity 
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { useRouter, useFocusEffect } from "expo-router"; 
@@ -19,50 +19,37 @@ export default function DashboardScreen() {
 
   const fetchData = async () => {
     try {
-      setLoading(true);
       const token = await SecureStore.getItemAsync("userToken");
-      const storedUserString = await SecureStore.getItemAsync("userData");
-
-      if (!token || !storedUserString) {
-        router.replace("/");
-        return;
+      const storedUser = await SecureStore.getItemAsync("userData");
+      
+      if (!token || !storedUser) { 
+        router.replace("/"); 
+        return; 
       }
+      
+      const userObj = JSON.parse(storedUser);
+      setUserRole(userObj.role);
 
-      const userObj = JSON.parse(storedUserString);
-      setUserRole(userObj.role); 
-
-      // 1. Φέρνουμε τα δεδομένα (Backend: {"user": {...}, "history": []})
+      // Φόρτωση δεδομένων χρήστη & υπολοίπου
       const response = await fetch(`${API_URL}/api/transactions/${userObj.id}`, {
-        method: "GET",
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
+        headers: { Authorization: `Bearer ${token}` }
       });
       const data = await response.json();
+      if (response.ok) setUserData(data.user);
 
-      // 2. AI Prediction (Μόνο αν είναι παιδί)
+      // Αν είναι παιδί, φόρτωσε την AI πρόβλεψη για τον στόχο
       if (userObj.role === 'kid') {
-        const aiResponse = await fetch(`${API_URL}/api/predict_goal/${userObj.id}`, {
-          method: "GET",
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json"
-          },
+        const aiRes = await fetch(`${API_URL}/api/predict_goal/${userObj.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
         });
-        const aiData = await aiResponse.json();
-        if (aiResponse.ok) setAiPrediction(aiData);
+        const aiData = await aiRes.json();
+        if (aiRes.ok) setAiPrediction(aiData);
       }
-
-      if (response.ok) {
-        setUserData(data.user); // Εδώ παίρνουμε το info του χρήστη
-      }
-
-    } catch (error) {
-      console.error("Fetch error:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    } catch (e) { 
+      console.error("Fetch Error:", e); 
+    } finally { 
+      setLoading(false); 
+      setRefreshing(false); 
     }
   };
 
@@ -72,51 +59,54 @@ export default function DashboardScreen() {
     }, [])
   );
 
-  const handleLogout = async () => {
-    await SecureStore.deleteItemAsync("userToken");
-    await SecureStore.deleteItemAsync("userData");
-    setUserData(null);
-    setUserRole(null);
-    router.replace("/");
-  };
-
-  if (loading && !refreshing) return (
-    <View style={styles.center}><ActivityIndicator size="large" color="#1a73e8" /></View>
-  );
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#1a73e8" />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* SIDE BAR */}
+      {/* --- SIDE BAR ΔΥΝΑΜΙΚΟ --- */}
       <View style={styles.sideBar}>
         <View style={styles.sideTop}>
-          <TouchableOpacity style={styles.sideIconActive} onPress={() => router.push("/dashboard")}>
+          <TouchableOpacity style={styles.sideIconActive}>
             <Ionicons name="grid" size={24} color="#1a73e8" />
           </TouchableOpacity>
 
-          {/* ΚΟΥΜΠΙ ΠΡΟΣΘΗΚΗΣ ΧΡΗΜΑΤΩΝ (POPUP) */}
-          <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/popup")}>
-            <Ionicons name="card-outline" size={24} color="#666" />
-          </TouchableOpacity>
+          {userRole === 'kid' && (
+            <>
+              <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/goals")}>
+                <Ionicons name="trophy-outline" size={24} color="#666" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/pockets")}>
+                <Ionicons name="wallet-outline" size={24} color="#666" />
+              </TouchableOpacity>
+              {/* ΤΟ ΠΑΙΔΙ ΠΗΓΑΙΝΕΙ ΣΤΗΝ ΟΘΟΝΗ ΣΠΑΤΑΛΗΣ (SPEND) */}
+              <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/spend")}>
+                <Ionicons name="cart-outline" size={24} color="#666" />
+              </TouchableOpacity>
+            </>
+          )}
 
-          {/* ΚΟΥΜΠΙ ΜΕΤΑΦΟΡΑΣ (ΜΟΝΟ ΓΙΑ ΓΟΝΕΙΣ) */}
           {userRole === 'parent' && (
-            <TouchableOpacity 
-              style={styles.sideIcon} 
-              onPress={() => router.push("/transaction")}
-            >
+            /* Ο ΓΟΝΕΑΣ ΠΗΓΑΙΝΕΙ ΣΤΗΝ ΟΘΟΝΗ ΜΕΤΑΦΟΡΑΣ (TRANSACTION) */
+            <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/transaction")}>
               <Ionicons name="swap-horizontal" size={24} color="#666" />
             </TouchableOpacity>
           )}
         </View>
 
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutIcon}>
+        <TouchableOpacity onPress={() => router.replace("/")} style={styles.sideIcon}>
           <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
         </TouchableOpacity>
       </View>
 
-      {/* MAIN CONTENT */}
+      {/* --- ΚΥΡΙΩΣ ΠΕΡΙΕΧΟΜΕΝΟ --- */}
       <View style={styles.mainContent}>
         <View style={styles.topHeader}>
           <View style={styles.headerLeft}>
@@ -131,45 +121,62 @@ export default function DashboardScreen() {
 
         <ScrollView 
           contentContainerStyle={styles.scrollContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={() => { setRefreshing(true); fetchData(); }} 
+            />
+          }
         >
-          {/* BALANCE CARD */}
+          {/* ΚΑΡΤΑ ΥΠΟΛΟΙΠΟΥ */}
           <View style={styles.balanceCard}>
-            <Text style={styles.balanceLabel}>ΔΙΑΘΕΣΙΜΟ ΥΠΟΛΟΙΠΟ</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.balanceLabel}>ΔΙΑΘΕΣΙΜΟ ΥΠΟΛΟΙΠΟ</Text>
+              {userRole === 'parent' && (
+                <TouchableOpacity onPress={() => router.push("/popup")} style={styles.addMoneyBtn}>
+                  <Ionicons name="add-circle" size={26} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
             <Text style={styles.balanceAmount}>
               {userData?.balance !== undefined ? userData.balance.toFixed(2) : "0.00"}€
             </Text>
           </View>
 
-          {/* AI CARD */}
+          {/* AI ΣΥΜΒΟΥΛΟΣ (ΜΟΝΟ ΓΙΑ ΠΑΙΔΙΑ) */}
           {userRole === 'kid' && (
-            <View style={[styles.aiCard, aiPrediction?.status === "CRITICAL" && styles.aiCardCritical]}>
+            <View style={[
+              styles.aiCard, 
+              aiPrediction?.status === "CRITICAL" && styles.aiCardCritical
+            ]}>
               <View style={styles.aiHeader}>
                 <Ionicons name="analytics" size={18} color="#FFD700" />
-                <Text style={styles.aiTag}>BEHAVIORAL AI ANALYSIS</Text>
+                <Text style={styles.aiTag}>AI FINANCE ADVISOR</Text>
               </View>
-              
-              {aiPrediction?.error ? (
-                <Text style={styles.aiAdvice}>Κάνε μερικές αγορές για ανάλυση! 🦉</Text>
-              ) : (
-                <>
-                  <Text style={styles.aiPredictionText}>
-                    Πρόβλεψη Στόχου: <Text style={styles.aiWeeks}>{aiPrediction?.weeks_left}</Text> εβδ.
-                  </Text>
-                  <Text style={styles.aiAdvice}>"{aiPrediction?.advice}"</Text>
-                </>
-              )}
+              <Text style={styles.aiAdvice}>
+                "{aiPrediction?.advice || "Κάνε μια αγορά για να αναλύσω τις συνήθειές σου!"}"
+              </Text>
             </View>
           )}
 
-          {/* GOAL BOX */}
+          {/* ΠΡΟΟΔΟΣ ΣΤΟΧΟΥ */}
           {userData?.goal_name && (
             <View style={styles.goalBox}>
-              <Text style={styles.goalTitle}>Στόχος: {userData.goal_name}</Text>
-              <View style={styles.progressBg}>
-                <View style={[styles.progressFill, { width: `${Math.min((userData.balance / (userData.goal_amount || 1)) * 100, 100)}%` }]} />
+              <View style={styles.goalHeaderRow}>
+                <Text style={styles.goalTitle}>Στόχος: {userData.goal_name}</Text>
+                <Ionicons name="flag-outline" size={18} color="#1a73e8" />
               </View>
-              <Text style={styles.goalDetail}>{userData.balance}€ / {userData.goal_amount}€</Text>
+              <View style={styles.progressBg}>
+                <View 
+                  style={[
+                    styles.progressFill, 
+                    { width: `${Math.min((userData.balance / (userData.goal_amount || 1)) * 100, 100)}%` }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.goalDetail}>
+                {userData.balance.toFixed(2)}€ / {userData.goal_amount}€
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -180,32 +187,72 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f4f7fa", flexDirection: 'row' },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  sideBar: { width: 70, backgroundColor: "#fff", borderRightWidth: 1, borderRightColor: "#eee", alignItems: "center", paddingVertical: 40, justifyContent: "space-between" },
-  sideTop: { gap: 35, alignItems: 'center' },
-  sideIconActive: { padding: 12, backgroundColor: "#e8f0fe", borderRadius: 15 },
+  sideBar: { 
+    width: 70, 
+    backgroundColor: "#fff", 
+    borderRightWidth: 1, 
+    borderRightColor: "#eee", 
+    alignItems: "center", 
+    paddingVertical: 40, 
+    justifyContent: "space-between" 
+  },
+  sideTop: { gap: 30, alignItems: 'center' },
   sideIcon: { padding: 12 },
-  logoutIcon: { padding: 10 },
+  sideIconActive: { padding: 12, backgroundColor: "#e8f0fe", borderRadius: 15 },
   mainContent: { flex: 1 },
-  topHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 45 : 15, marginBottom: 20 },
+  topHeader: { 
+    flexDirection: "row", 
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    paddingHorizontal: 20, 
+    paddingTop: Platform.OS === 'ios' ? 10 : 50, 
+    marginBottom: 20 
+  },
   headerLeft: { minWidth: 80 },
-  coinBadge: { backgroundColor: "#fff", padding: 8, borderRadius: 12, elevation: 2 },
-  coinText: { fontWeight: "bold", color: "#f39c12", fontSize: 14 },
+  coinBadge: { 
+    backgroundColor: "#fff", 
+    padding: 8, 
+    borderRadius: 12, 
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4
+  },
+  coinText: { fontWeight: "bold", color: "#f39c12" },
   userTitle: { fontSize: 18, fontWeight: "900", color: "#333" },
-  scrollContainer: { paddingHorizontal: 20, paddingBottom: 40 },
-  balanceCard: { backgroundColor: "#1a73e8", borderRadius: 25, padding: 30, marginBottom: 20, elevation: 5 },
-  balanceLabel: { color: "#e0e0e0", fontWeight: "bold", fontSize: 10, marginBottom: 5, letterSpacing: 1 },
-  balanceAmount: { fontSize: 38, fontWeight: "900", color: "#fff" },
-  aiCard: { backgroundColor: "#1c1c1e", borderRadius: 20, padding: 20, marginBottom: 20, borderLeftWidth: 5, borderLeftColor: "#FFD700" },
-  aiCardCritical: { borderLeftColor: "#ff4757" },
-  aiHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  aiTag: { color: "#FFD700", fontSize: 10, fontWeight: "bold", marginLeft: 8 },
-  aiPredictionText: { color: "#fff", fontSize: 16, fontWeight: "600", marginBottom: 6 },
-  aiWeeks: { color: "#00d1b2", fontSize: 24, fontWeight: "900" },
-  aiAdvice: { color: "#aaa", fontSize: 13, fontStyle: "italic" },
-  goalBox: { backgroundColor: "#fff", padding: 20, borderRadius: 20, elevation: 2 },
-  goalTitle: { fontWeight: "bold", color: "#444", marginBottom: 10 },
-  progressBg: { height: 8, backgroundColor: "#eee", borderRadius: 4, overflow: "hidden" },
-  progressFill: { height: "100%", backgroundColor: "#1a73e8" },
-  goalDetail: { textAlign: "right", fontSize: 11, color: "#999", marginTop: 5 }
+  scrollContainer: { paddingHorizontal: 20, paddingBottom: 30 },
+  balanceCard: { 
+    backgroundColor: "#1a73e8", 
+    borderRadius: 25, 
+    padding: 25, 
+    marginBottom: 20,
+    elevation: 8,
+    shadowColor: "#1a73e8",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 }
+  },
+  balanceLabel: { color: "rgba(255,255,255,0.8)", fontWeight: "bold", fontSize: 11, letterSpacing: 1 },
+  balanceAmount: { fontSize: 36, fontWeight: "900", color: "#fff", marginTop: 5 },
+  addMoneyBtn: { padding: 5 },
+  aiCard: { backgroundColor: "#1c1c1e", borderRadius: 20, padding: 20, marginBottom: 20 },
+  aiCardCritical: { borderLeftWidth: 5, borderLeftColor: "#ff4757" },
+  aiHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  aiTag: { color: "#FFD700", fontSize: 10, fontWeight: "bold", marginLeft: 8, letterSpacing: 1 },
+  aiAdvice: { color: "#ddd", fontSize: 14, fontStyle: "italic", lineHeight: 20 },
+  goalBox: { 
+    backgroundColor: "#fff", 
+    padding: 20, 
+    borderRadius: 22, 
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10
+  },
+  goalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  goalTitle: { fontWeight: "800", color: "#333", fontSize: 15 },
+  progressBg: { height: 12, backgroundColor: "#f0f0f0", borderRadius: 6, overflow: 'hidden' },
+  progressFill: { height: "100%", backgroundColor: "#1a73e8", borderRadius: 6 },
+  goalDetail: { textAlign: "right", fontSize: 12, marginTop: 8, color: "#888", fontWeight: "600" }
 });
