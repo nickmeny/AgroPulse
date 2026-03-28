@@ -82,6 +82,46 @@ class FinanceNN:
             "internal_prediction": int(prediction)
         }
 
+    def teach_ai(self, amount, category_name, balance, correct_label):
+
+
+        """
+
+
+        Ο 'Pro' τρόπος: Ο γονέας διορθώνει το AI και αυτό ξανα-εκπαιδεύεται 
+
+
+        πάνω στο συγκεκριμένο παράδειγμα (Incremental Learning).
+
+
+        """
+
+
+        cat_id = self.category_map.get(category_name, 3)
+
+
+        percentage = amount / balance if balance > 0 else 1
+
+
+        X_new = np.array([[amount, cat_id, balance, percentage]])
+
+
+        y_new = np.array([correct_label])
+
+
+        
+
+
+        # Μερική επανεκπαίδευση
+
+
+        self.model.partial_fit(X_new, y_new)
+
+
+        self._save_model()
+
+
+        print("--- Το AI έμαθε από τη διόρθωση του γονέα! ---")
     # --- BEHAVIORAL: Πρόβλεψη Στόχου ---
     def predict_goal_timeframe(self, target_amount, weekly_allowance, current_savings=0):
         if len(self.transaction_history) < 3:

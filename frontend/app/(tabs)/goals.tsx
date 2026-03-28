@@ -26,6 +26,10 @@ export default function GoalsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.sideBar}>
         <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/dashboard")}><Ionicons name="grid-outline" size={24} color="#666" /></TouchableOpacity>
+        
+        {/* ΠΡΟΣΤΕΘΗΚΕ ΤΟ QUIZ TAB */}
+        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/quiz")}><Ionicons name="school-outline" size={24} color="#666" /></TouchableOpacity>
+        
         <TouchableOpacity style={styles.sideIconActive}><Ionicons name="trophy" size={24} color="#1a73e8" /></TouchableOpacity>
         <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/pockets")}><Ionicons name="wallet-outline" size={24} color="#666" /></TouchableOpacity>
         <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/invest")}><Ionicons name="stats-chart-outline" size={24} color="#666" /></TouchableOpacity>
@@ -40,6 +44,7 @@ export default function GoalsScreen() {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f4f7fa", flexDirection: 'row' },
   sideBar: { width: 70, backgroundColor: "#fff", borderRightWidth: 1, borderRightColor: "#eee", alignItems: "center", paddingVertical: 40, gap: 25 },

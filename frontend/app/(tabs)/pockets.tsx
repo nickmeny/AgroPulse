@@ -14,7 +14,6 @@ export default function PocketsScreen() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   
-  // States για νέο κουμπαρά
   const [newName, setNewName] = useState("");
   const [newTarget, setNewTarget] = useState("");
   
@@ -86,14 +85,33 @@ export default function PocketsScreen() {
     <SafeAreaView style={styles.container}>
       {/* SIDE BAR */}
       <View style={styles.sideBar}>
-        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/dashboard")}><Ionicons name="grid-outline" size={24} color="#666" /></TouchableOpacity>
-        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/goals")}><Ionicons name="trophy-outline" size={24} color="#666" /></TouchableOpacity>
-        <TouchableOpacity style={styles.sideIconActive}><Ionicons name="wallet" size={24} color="#1a73e8" /></TouchableOpacity>
-        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/invest")}><Ionicons name="stats-chart-outline" size={24} color="#666" /></TouchableOpacity>
-        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/spend")}><Ionicons name="cart-outline" size={24} color="#666" /></TouchableOpacity>
+        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/dashboard")}>
+          <Ionicons name="grid-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/quiz")}>
+          <Ionicons name="school-outline" size={24} color="#666" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/goals")}>
+          <Ionicons name="trophy-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.sideIconActive}>
+          <Ionicons name="wallet" size={24} color="#1a73e8" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/invest")}>
+          <Ionicons name="stats-chart-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.sideIcon} onPress={() => router.push("/spend")}>
+          <Ionicons name="cart-outline" size={24} color="#666" />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.main}>
+        {/* ΔΙΟΡΘΩΣΗ: View αντί για div */}
         <View style={styles.header}>
           <Text style={styles.title}>Κουμπαράδες 🍯</Text>
           <TouchableOpacity onPress={() => setModalVisible(true)}>
@@ -101,16 +119,16 @@ export default function PocketsScreen() {
           </TouchableOpacity>
         </View>
 
-        {loading ? <ActivityIndicator size="large" /> : (
+        {loading ? <ActivityIndicator size="large" color="#1a73e8" /> : (
           <FlatList 
             data={pockets} 
             keyExtractor={(item: any) => item.id.toString()}
+            showsVerticalScrollIndicator={false}
             renderItem={({item}: any) => (
               <View style={styles.card}>
                 <View style={{flex: 1}}>
                   <Text style={styles.pName}>{item.name}</Text>
                   <Text style={styles.pSub}>{item.balance.toFixed(2)}€ / {item.target}€</Text>
-                  {/* Progress Bar */}
                   <View style={styles.miniProgressBg}>
                     <View style={[styles.miniProgressFill, { width: `${Math.min((item.balance / (item.target || 1)) * 100, 100)}%` }]} />
                   </View>
@@ -130,7 +148,6 @@ export default function PocketsScreen() {
         )}
       </View>
 
-      {/* MODAL ΓΙΑ ΝΕΟ ΚΟΥΜΠΑΡΑ */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -165,7 +182,6 @@ const styles = StyleSheet.create({
   plusBtn: { backgroundColor: "#2ecc71", padding: 10, borderRadius: 12, minWidth: 45, alignItems: 'center' },
   minusBtn: { backgroundColor: "#e74c3c", padding: 10, borderRadius: 12, minWidth: 45, alignItems: 'center' },
   btnText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
-  // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#fff', width: '80%', padding: 25, borderRadius: 25 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
